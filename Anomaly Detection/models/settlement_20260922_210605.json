@@ -1,0 +1,27 @@
+{
+  "name": "settlement_20260922_210605",
+  "trained_at": "2026-09-22T21:12:52",
+  "style": "Mars base",
+  "params": [
+    26.5,
+    70.0,
+    20.0,
+    1500.0,
+    12.0,
+    60.0,
+    0.6,
+    1.0,
+    1.0,
+    3.0
+  ],
+  "channels": [
+    "O2 (%)",
+    "Pressure (kPa)",
+    "Temperature (°C)",
+    "CO2 (ppm)",
+    "Radiation (µSv/h)"
+  ],
+  "episode_length": 150,
+  "ppo_timesteps": 300000,
+  "window": 8
+}
