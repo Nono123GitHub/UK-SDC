@@ -1,0 +1,25 @@
+{
+  "name": "test1",
+  "trained_at": "2026-09-22T19:48:22",
+  "style": "Lunar outpost",
+  "params": [
+    30.0,
+    57.0,
+    19.0,
+    2000.0,
+    25.0,
+    60.0,
+    0.7,
+    1.2
+  ],
+  "channels": [
+    "O2 (%)",
+    "Pressure (kPa)",
+    "Temperature (°C)",
+    "CO2 (ppm)",
+    "Radiation (µSv/h)"
+  ],
+  "episode_length": 150,
+  "ppo_timesteps": 200000,
+  "window": 8
+}
