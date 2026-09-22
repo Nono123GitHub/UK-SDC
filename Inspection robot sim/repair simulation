@@ -1,0 +1,33 @@
+import random
+import gymnasium as gym 
+import numpy as np
+import time 
+
+marsBase = gym.make("MarsBase-v0")
+base = np.zeros((10,10))
+
+class repairbot (self, type, tool, id):
+    def __init__(self, type, tool, id):
+        self.type = type
+        self.tool = tool
+        self.id = id
+    def repair(self, cell):
+        if cell == 1:
+            cell = 0
+            return True
+
+
+def inflictDamage (cellCoord):
+    x, y = cellCoord
+    if base[x][y] == 0:
+        return 1
+    else:
+        return 0
+
+interval = random.uniform(0.1, 1)
+lastcheck = time.perf_counter()
+while True: 
+    if time.perf_counter() - lastcheck > interval:
+        x = random.randint(0,9)
+        y = random.randint(0,9)
+        base[x][y] = flip(base[x][y])
