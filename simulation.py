@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import matplotlib.pyplot as plt
 
-DAMAGE_TYPES = ["Dent", "Puncture", "Sealant failure", "Circuit failure", "Hull rupture"]
+DAMAGE_TYPES = ["Dent", "Sealant failure", "Circuit failure", "Hull rupture"]
 SENSORS = ["Radiation", "Pressure", "Oxygen", "CO2", "Temperature", "Humidity"]
 UNITS = ["mSv/h", "kPa", "%", "%", "C", "%"]
 
@@ -16,7 +16,6 @@ SENSOR_MAX = np.array([10.0, 300.0, 100.0, 20.0, 80.0, 100.0])
 
 SIGNATURES = np.array([
     [0.8, -0.3, 0.0, 0.0, -0.3, 0.0],
-    [0.5, -2.0, -1.0, 0.5, -1.0, -1.0],
     [0.0, -1.0, -0.5, 0.3, -0.5, -1.0],
     [0.0, 0.2, -1.0, 1.5, 2.0, -0.5],
     [2.0, -3.0, -2.0, -0.5, -2.5, -2.0],
@@ -183,7 +182,7 @@ def build_report(confusion, mean_symptoms, training_outcomes, out_file):
     percent = confusion / np.maximum(row_totals, 1) * 100.0
     per_class = np.diag(confusion) / np.maximum(row_totals.flatten(), 1) * 100.0
     overall = np.trace(confusion) / confusion.sum() * 100.0
-    short_names = ["Dent", "Puncture", "Sealant", "Circuit", "Hull"]
+    short_names = ["Dent", "Sealant", "Circuit", "Hull"]
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
     fig.suptitle("Lunar base autonomous repair network: damage diagnosis from sensor symptoms", fontsize=14)
