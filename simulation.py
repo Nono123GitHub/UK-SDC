@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -26,6 +27,14 @@ N_LEVELS = 5
 N_SENSORS = len(SENSORS)
 N_DAMAGE = len(DAMAGE_TYPES)
 
+# Default run lengths (the original script used 6,000 training and 5,000 evaluation steps)
+DEFAULT_TRAIN_STEPS = 200_000
+DEFAULT_EVAL_STEPS = 50_000
+# The learning rate shrinks as 1 / (1 + updates / DECAY). A fixed rate keeps bouncing between the
+# overlapping damage types forever, so longer runs only help if the step size is allowed to shrink.
+# Set to 0 to keep the original fixed learning rate.
+DEFAULT_LR_DECAY_STEPS = 20_000
+
 
 def symptom_levels(readings):
     deviation = (readings - NORMAL_CENTER) / NORMAL_HALF_WIDTH
@@ -42,7 +51,7 @@ def symptom_features(readings):
     return features
 
 
-class MartianBaseEnv(gym.Env):
+class LunarBaseEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, n_robots=4, episode_length=200, noise_std=0.35, fault_prob=0.05,
@@ -106,8 +115,11 @@ class MartianBaseEnv(gym.Env):
 
 
 class SymptomAgent:
-    def __init__(self, learning_rate=0.15):
+    def __init__(self, learning_rate=0.15, lr_decay_steps=DEFAULT_LR_DECAY_STEPS):
+        self.initial_learning_rate = learning_rate
         self.learning_rate = learning_rate
+        self.lr_decay_steps = lr_decay_steps
+        self.updates = 0
         self.weights = np.zeros((N_DAMAGE, N_SENSORS * N_LEVELS))
         for damage_index in range(N_DAMAGE):
             expected = NORMAL_CENTER + SIGNATURES[damage_index] * DEVIATION_SCALE * NORMAL_HALF_WIDTH
@@ -121,22 +133,25 @@ class SymptomAgent:
         if action == true_damage:
             return
         features = symptom_features(observation)
+        self.updates += 1
+        if self.lr_decay_steps > 0:
+            self.learning_rate = self.initial_learning_rate / (1.0 + self.updates / self.lr_decay_steps)
         self.weights[true_damage] += self.learning_rate * features
         self.weights[action] -= self.learning_rate * features
 
 
 def run_training(env, agent, steps, seed):
     observation, _ = env.reset(seed=seed)
-    outcomes = []
-    for _ in range(steps):
+    outcomes = np.zeros(steps)
+    for t in range(steps):
         action = agent.act(observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
         agent.learn(observation, action, info["true_damage"])
-        outcomes.append(1.0 if info["correct"] else 0.0)
+        outcomes[t] = 1.0 if info["correct"] else 0.0
         observation = next_observation
         if terminated or truncated:
             observation, _ = env.reset()
-    return np.array(outcomes)
+    return outcomes
 
 
 def run_evaluation(env, agent, steps, seed):
@@ -163,7 +178,7 @@ def rolling_mean(values, window):
     return np.convolve(values, kernel, mode="valid")
 
 
-def build_report(confusion, mean_symptoms, training_outcomes):
+def build_report(confusion, mean_symptoms, training_outcomes, out_file):
     row_totals = confusion.sum(axis=1, keepdims=True)
     percent = confusion / np.maximum(row_totals, 1) * 100.0
     per_class = np.diag(confusion) / np.maximum(row_totals.flatten(), 1) * 100.0
@@ -171,7 +186,7 @@ def build_report(confusion, mean_symptoms, training_outcomes):
     short_names = ["Dent", "Puncture", "Sealant", "Circuit", "Hull"]
 
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
-    fig.suptitle("Martian base autonomous repair network: damage diagnosis from sensor symptoms", fontsize=14)
+    fig.suptitle("Lunar base autonomous repair network: damage diagnosis from sensor symptoms", fontsize=14)
 
     ax = axes[0, 0]
     image = ax.imshow(percent, cmap="viridis", vmin=0, vmax=100)
@@ -200,9 +215,10 @@ def build_report(confusion, mean_symptoms, training_outcomes):
     ax.legend(loc="lower right")
 
     ax = axes[1, 0]
-    window = 200
-    curve = rolling_mean(training_outcomes, window) * 100.0
-    ax.plot(np.arange(window, len(training_outcomes) + 1), curve, color="tab:blue")
+    window = max(200, len(training_outcomes) // 100)
+    if len(training_outcomes) >= window:
+        curve = rolling_mean(training_outcomes, window) * 100.0
+        ax.plot(np.arange(window, len(training_outcomes) + 1), curve, color="tab:blue")
     ax.set_xlabel("Training diagnoses")
     ax.set_ylabel(f"Rolling accuracy over {window} diagnoses (%)")
     ax.set_title("Learning curve")
@@ -222,11 +238,12 @@ def build_report(confusion, mean_symptoms, training_outcomes):
     fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="-2 severe low, +2 severe high")
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig("mars_diagnosis_report.png", dpi=150)
+    fig.savefig(out_file, dpi=150)
     return overall, per_class, percent
 
 
-def print_summary(overall, per_class, percent):
+def print_summary(overall, per_class, percent, train_steps, eval_steps):
+    print(f"Training diagnoses: {train_steps:,}   Evaluation diagnoses (no learning): {eval_steps:,}")
     print("Normal operating ranges")
     for name, unit, low, high in zip(SENSORS, UNITS, NORMAL_LOW, NORMAL_HIGH):
         print(f"  {name:<12} {low:8.3f} to {high:8.3f} {unit}")
@@ -247,13 +264,24 @@ def print_summary(overall, per_class, percent):
 
 
 def main():
-    env = MartianBaseEnv(n_robots=4)
-    agent = SymptomAgent()
-    training_outcomes = run_training(env, agent, steps=6000, seed=1)
-    confusion, mean_symptoms = run_evaluation(env, agent, steps=5000, seed=2)
-    overall, per_class, percent = build_report(confusion, mean_symptoms, training_outcomes)
-    print_summary(overall, per_class, percent)
-    plt.show()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train-steps", type=int, default=DEFAULT_TRAIN_STEPS)
+    parser.add_argument("--eval-steps", type=int, default=DEFAULT_EVAL_STEPS)
+    parser.add_argument("--train-seed", type=int, default=1)
+    parser.add_argument("--eval-seed", type=int, default=2)
+    parser.add_argument("--lr-decay", type=int, default=DEFAULT_LR_DECAY_STEPS)
+    parser.add_argument("--out", default="lunar_diagnosis_report.png")
+    parser.add_argument("--no-show", action="store_true")
+    args = parser.parse_args()
+
+    env = LunarBaseEnv(n_robots=4)
+    agent = SymptomAgent(lr_decay_steps=args.lr_decay)
+    training_outcomes = run_training(env, agent, steps=args.train_steps, seed=args.train_seed)
+    confusion, mean_symptoms = run_evaluation(env, agent, steps=args.eval_steps, seed=args.eval_seed)
+    overall, per_class, percent = build_report(confusion, mean_symptoms, training_outcomes, args.out)
+    print_summary(overall, per_class, percent, args.train_steps, args.eval_steps)
+    if not args.no_show:
+        plt.show()
 
 
 if __name__ == "__main__":
